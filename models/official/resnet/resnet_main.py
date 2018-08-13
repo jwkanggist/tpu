@@ -442,40 +442,33 @@ def main(unused_argv):
         train_batch_size=FLAGS.train_batch_size,
         eval_batch_size=FLAGS.eval_batch_size)
 
+    
     assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
-      'Invalid value for --precision flag; must be bfloat16 or float32.')
+        'Invalid value for --precision flag; must be bfloat16 or float32.')
     tf.logging.info('Precision: %s', FLAGS.precision)
     use_bfloat16 = FLAGS.precision == 'bfloat16'
 
-
-
-    if FLAGS.data_dir == FAKE_DATA_DIR:
-        tf.logging.info('Using fake dataset.')
-    else:
-        tf.logging.info('Using dataset: %s' % FLAGS.data_dir)
-        # Input pipelines are slightly different (with regards to shuffling and
-        # preprocessing) between training and evaluation.
-        imagenet_train, imagenet_eval = [imagenet_input.ImageNetInput(is_training=is_training,
-                                                                      data_dir=FLAGS.data_dir,
-                                                                      transpose_input=FLAGS.transpose_input,
-                                                                      num_parallel_calls=FLAGS.num_parallel_calls,
-                                                                      use_bfloat16=use_bfloat16) for is_training in [True, False]]
-
-
-    steps_per_epoch = FLAGS.num_train_images // FLAGS.train_batch_size
+    # Input pipelines are slightly different (with regards to shuffling and
+    # preprocessing) between training and evaluation.
+    imagenet_train, imagenet_eval = [imagenet_input.ImageNetInput(
+        is_training=is_training,
+        data_dir=FLAGS.data_dir,
+        transpose_input=FLAGS.transpose_input,
+        use_bfloat16=use_bfloat16) for is_training in [True, False]]
 
     if FLAGS.mode == 'eval':
         eval_steps = FLAGS.num_eval_images // FLAGS.eval_batch_size
 
         # Run evaluation when there's a new checkpoint
         for ckpt in evaluation.checkpoints_iterator(
-            FLAGS.model_dir, timeout=FLAGS.eval_timeout):
+                FLAGS.model_dir, timeout=FLAGS.eval_timeout):
             tf.logging.info('Starting to evaluate.')
             try:
                 start_timestamp = time.time()  # This time will include compilation time
-                eval_results = resnet_classifier.evaluate(input_fn=imagenet_eval.input_fn,
-                                                          steps=eval_steps,
-                                                          checkpoint_path=ckpt)
+                eval_results = resnet_classifier.evaluate(
+                    input_fn=imagenet_eval.input_fn,
+                    steps=eval_steps,
+                    checkpoint_path=ckpt)
                 elapsed_time = int(time.time() - start_timestamp)
                 tf.logging.info('Eval results: %s. Elapsed seconds: %d' %
                                 (eval_results, elapsed_time))
@@ -483,7 +476,8 @@ def main(unused_argv):
                 # Terminate eval job when final checkpoint is reached
                 current_step = int(os.path.basename(ckpt).split('-')[1])
                 if current_step >= FLAGS.train_steps:
-                    tf.logging.info('Evaluation finished after training step %d' % current_step)
+                    tf.logging.info(
+                        'Evaluation finished after training step %d' % current_step)
                     break
 
             except tf.errors.NotFoundError:
@@ -491,22 +485,22 @@ def main(unused_argv):
                 # sometimes the TPU worker does not finish initializing until long after
                 # the CPU job tells it to start evaluating. In this case, the checkpoint
                 # file could have been deleted already.
-                tf.logging.info('Checkpoint %s no longer exists, skipping checkpoint' % ckpt)
+                tf.logging.info(
+                    'Checkpoint %s no longer exists, skipping checkpoint' % ckpt)
 
-    else:   # FLAGS.mode == 'train' or FLAGS.mode == 'train_and_eval'
-        current_step = estimator._load_global_step_from_checkpoint_dir(FLAGS.model_dir)  # pylint: disable=protected-access,line-too-long
-        steps_per_epoch = FLAGS.num_train_images // FLAGS.train_batch_size
-
+    else:  # FLAGS.mode == 'train' or FLAGS.mode == 'train_and_eval'
+        current_step = estimator._load_global_step_from_checkpoint_dir(
+            FLAGS.model_dir)  # pylint: disable=protected-access,line-too-long
+        batches_per_epoch = FLAGS.num_train_images / FLAGS.train_batch_size
         tf.logging.info('Training for %d steps (%.2f epochs in total). Current'
                         ' step %d.' % (FLAGS.train_steps,
-                                       FLAGS.train_steps / steps_per_epoch,
+                                       FLAGS.train_steps / batches_per_epoch,
                                        current_step))
 
         start_timestamp = time.time()  # This time will include compilation time
-
         if FLAGS.mode == 'train':
             resnet_classifier.train(
-              input_fn=imagenet_train.input_fn, max_steps=FLAGS.train_steps)
+                input_fn=imagenet_train.input_fn, max_steps=FLAGS.train_steps)
 
         else:
             assert FLAGS.mode == 'train_and_eval'
@@ -515,31 +509,30 @@ def main(unused_argv):
                 # At the end of training, a checkpoint will be written to --model_dir.
                 next_checkpoint = min(current_step + FLAGS.steps_per_eval,
                                       FLAGS.train_steps)
-                resnet_classifier.train(input_fn=imagenet_train.input_fn, max_steps=next_checkpoint)
+                resnet_classifier.train(
+                    input_fn=imagenet_train.input_fn, max_steps=next_checkpoint)
                 current_step = next_checkpoint
-
-                tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
-                                (next_checkpoint, int(time.time() - start_timestamp)))
 
                 # Evaluate the model on the most recent model in --model_dir.
                 # Since evaluation happens in batches of --eval_batch_size, some images
-                # may be excluded modulo the batch size. As long as the batch size is
-                # consistent, the evaluated images are also consistent.
+                # may be consistently excluded modulo the batch size.
                 tf.logging.info('Starting to evaluate.')
-                eval_results = resnet_classifier.evaluate(input_fn=imagenet_eval.input_fn,
-                                                          steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
+                eval_results = resnet_classifier.evaluate(
+                    input_fn=imagenet_eval.input_fn,
+                    steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
                 tf.logging.info('Eval results: %s' % eval_results)
 
-            elapsed_time = int(time.time() - start_timestamp)
-            tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
+        elapsed_time = int(time.time() - start_timestamp)
+        tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
                         (FLAGS.train_steps, elapsed_time))
 
         if FLAGS.export_dir is not None:
             # The guide to serve a exported TensorFlow model is at:
             #    https://www.tensorflow.org/serving/serving_basic
             tf.logging.info('Starting to export model.')
-            resnet_classifier.export_savedmodel(export_dir_base=FLAGS.export_dir,
-                                                serving_input_receiver_fn=imagenet_input.image_serving_input_fn)
+            resnet_classifier.export_savedmodel(
+                export_dir_base=FLAGS.export_dir,
+                serving_input_receiver_fn=imagenet_input.image_serving_input_fn)
 
 
 if __name__ == '__main__':
