@@ -257,7 +257,7 @@ def resnet_model_fn(features, labels, mode, params):
     if FLAGS.precision == 'bfloat16':
         with tf.contrib.tpu.bfloat16_scope():
             logits = build_network()
-        logits = tf.cast(logits, tf.float32)
+            logits = tf.cast(logits, tf.float32)
     elif FLAGS.precision == 'float32':
         logits = build_network()
 
@@ -286,8 +286,8 @@ def resnet_model_fn(features, labels, mode, params):
 
     # Add weight decay to the loss for non-batch-normalization variables.
     loss = cross_entropy + FLAGS.weight_decay * tf.add_n(
-      [tf.nn.l2_loss(v) for v in tf.trainable_variables()
-       if 'batch_normalization' not in v.name])
+        [tf.nn.l2_loss(v) for v in tf.trainable_variables()
+        if 'batch_normalization' not in v.name])
 
     host_call = None
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -402,23 +402,26 @@ def resnet_model_fn(features, labels, mode, params):
                                            eval_metrics=eval_metrics)
 
 
+
+
 def main(unused_argv):
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(FLAGS.tpu,
                                                                           zone=FLAGS.tpu_zone,
                                                                           project=FLAGS.gcp_project)
 
     tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
-                                          num_shards=FLAGS.num_cores)
-                                          # per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
+                                          num_shards=FLAGS.num_cores,
+                                          per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
 
     ## ckpt dir create
-    now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
-    tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
-    tf.logging.info('[main] model dir = %s'%curr_model_dir)
-    if not tf.gfile.Exists(curr_model_dir):
-        tf.gfile.MakeDirs(curr_model_dir)
-    FLAGS.model_dir = curr_model_dir
+    # now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    # curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
+    # tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
+    # tf.logging.info('[main] model dir = %s'%curr_model_dir)
+    #
+    # if not tf.gfile.Exists(curr_model_dir):
+    #     tf.gfile.MakeDirs(curr_model_dir)
+    # FLAGS.model_dir = curr_model_dir
 
 
     config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver,
@@ -522,9 +525,9 @@ def main(unused_argv):
                                                           steps=FLAGS.num_eval_images // FLAGS.eval_batch_size)
                 tf.logging.info('Eval results: %s' % eval_results)
 
-                elapsed_time = int(time.time() - start_timestamp)
-                tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
-                            (FLAGS.train_steps, elapsed_time))
+            elapsed_time = int(time.time() - start_timestamp)
+            tf.logging.info('Finished training up to step %d. Elapsed seconds %d.' %
+                        (FLAGS.train_steps, elapsed_time))
 
         if FLAGS.export_dir is not None:
             # The guide to serve a exported TensorFlow model is at:
