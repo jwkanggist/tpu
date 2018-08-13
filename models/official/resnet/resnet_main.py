@@ -419,12 +419,14 @@ def main(unused_argv):
                                                                         zone=FLAGS.tpu_zone,
                                                                         project=FLAGS.gcp_project)
 
+    tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
+                                        num_shards=FLAGS.num_cores,
+                                        per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
+
     config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver,
                                     model_dir=FLAGS.model_dir,
                                     save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
-                                    tpu_config=tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
-                                                                        num_shards=FLAGS.num_cores,
-                                                                        per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
+                                    tpu_config=tpu_config)  # pylint: disable=line-too-long
 
     resnet_classifier = tf.contrib.tpu.TPUEstimator(use_tpu=FLAGS.use_tpu,
                                                     model_fn=resnet_model_fn,
