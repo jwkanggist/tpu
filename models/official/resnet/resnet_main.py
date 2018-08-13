@@ -27,6 +27,7 @@ import absl.logging as _logging  # pylint: disable=unused-import
 import tensorflow as tf
 import imagenet_input
 import resnet_model
+
 from tensorflow.contrib import summary
 from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
@@ -407,8 +408,8 @@ def main(unused_argv):
                                                                           project=FLAGS.gcp_project)
 
     tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
-                                          num_shards=FLAGS.num_cores,
-                                          per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
+                                          num_shards=FLAGS.num_cores)
+                                          # per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
 
     ## ckpt dir create
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
