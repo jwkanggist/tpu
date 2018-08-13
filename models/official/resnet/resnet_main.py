@@ -395,38 +395,35 @@ def resnet_model_fn(features, labels, mode, params):
     eval_metrics = (metric_fn, [labels, logits])
 
     return tf.contrib.tpu.TPUEstimatorSpec(mode=mode,
-                                            loss=loss,
-                                            train_op=train_op,
-                                            host_call=host_call,
-                                            eval_metrics=eval_metrics)
+                                           loss=loss,
+                                           train_op=train_op,
+                                           host_call=host_call,
+                                           eval_metrics=eval_metrics)
 
 
 def main(unused_argv):
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(FLAGS.tpu,
+                                                                          zone=FLAGS.tpu_zone,
+                                                                          project=FLAGS.gcp_project)
+
+    tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
+                                          num_shards=FLAGS.num_cores,
+                                          per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
+
     ## ckpt dir create
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
     curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
-
     tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
     tf.logging.info('[main] model dir = %s'%curr_model_dir)
-
     if not tf.gfile.Exists(curr_model_dir):
         tf.gfile.MakeDirs(curr_model_dir)
-
     FLAGS.model_dir = curr_model_dir
 
 
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(FLAGS.tpu,
-                                                                        zone=FLAGS.tpu_zone,
-                                                                        project=FLAGS.gcp_project)
-
-    tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
-                                        num_shards=FLAGS.num_cores,
-                                        per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
-
     config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver,
-                                    model_dir=FLAGS.model_dir,
-                                    save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
-                                    tpu_config=tpu_config)  # pylint: disable=line-too-long
+                                      model_dir=FLAGS.model_dir,
+                                      save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
+                                      tpu_config=tpu_config)  # pylint: disable=line-too-long
 
     resnet_classifier = tf.contrib.tpu.TPUEstimator(use_tpu=FLAGS.use_tpu,
                                                     model_fn=resnet_model_fn,
@@ -441,6 +438,8 @@ def main(unused_argv):
     tf.logging.info('Precision: %s', FLAGS.precision)
     use_bfloat16 = FLAGS.precision == 'bfloat16'
 
+
+
     if FLAGS.data_dir == FAKE_DATA_DIR:
         tf.logging.info('Using fake dataset.')
     else:
@@ -448,10 +447,10 @@ def main(unused_argv):
         # Input pipelines are slightly different (with regards to shuffling and
         # preprocessing) between training and evaluation.
         imagenet_train, imagenet_eval = [imagenet_input.ImageNetInput(is_training=is_training,
-                                                                        data_dir=FLAGS.data_dir,
-                                                                        transpose_input=FLAGS.transpose_input,
-                                                                        num_parallel_calls=FLAGS.num_parallel_calls,
-                                                                        use_bfloat16=use_bfloat16) for is_training in [True, False]]
+                                                                      data_dir=FLAGS.data_dir,
+                                                                      transpose_input=FLAGS.transpose_input,
+                                                                      num_parallel_calls=FLAGS.num_parallel_calls,
+                                                                      use_bfloat16=use_bfloat16) for is_training in [True, False]]
 
 
     steps_per_epoch = FLAGS.num_train_images // FLAGS.train_batch_size
@@ -466,8 +465,8 @@ def main(unused_argv):
             try:
                 start_timestamp = time.time()  # This time will include compilation time
                 eval_results = resnet_classifier.evaluate(input_fn=imagenet_eval.input_fn,
-                                                            steps=eval_steps,
-                                                            checkpoint_path=ckpt)
+                                                          steps=eval_steps,
+                                                          checkpoint_path=ckpt)
                 elapsed_time = int(time.time() - start_timestamp)
                 tf.logging.info('Eval results: %s. Elapsed seconds: %d' %
                                 (eval_results, elapsed_time))
