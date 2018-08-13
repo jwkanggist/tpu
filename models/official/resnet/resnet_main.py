@@ -260,7 +260,7 @@ def resnet_model_fn(features, labels, mode, params):
 
 
     if FLAGS.precision == 'bfloat16':
-        with tf.contrib.tpu.bfloat16_scope():
+        with bfloat16.bfloat16_scope():
             logits = build_network()
             logits = tf.cast(logits, tf.float32)
     elif FLAGS.precision == 'float32':
@@ -308,7 +308,7 @@ def resnet_model_fn(features, labels, mode, params):
         # When using TPU, wrap the optimizer with CrossShardOptimizer which
         # handles synchronization details between different TPU cores. To the
         # user, this should look like regular synchronous training.
-        optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+        optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
     # Batch normalization requires UPDATE_OPS to be added as a dependency to
     # the train operation.
@@ -410,13 +410,6 @@ def resnet_model_fn(features, labels, mode, params):
 
 
 def main(unused_argv):
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(FLAGS.tpu,
-                                                                          zone=FLAGS.tpu_zone,
-                                                                          project=FLAGS.gcp_project)
-
-    tpu_config = tf.contrib.tpu.TPUConfig(iterations_per_loop=FLAGS.iterations_per_loop,
-                                          num_shards=FLAGS.num_cores,
-                                          per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
 
     ## ckpt dir create
     now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
@@ -428,19 +421,26 @@ def main(unused_argv):
         tf.gfile.MakeDirs(curr_model_dir)
     FLAGS.model_dir = curr_model_dir
 
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+        FLAGS.tpu,
+        zone=FLAGS.tpu_zone,
+        project=FLAGS.gcp_project)
 
-    config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver,
-                                      model_dir=FLAGS.model_dir,
-                                      save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
-                                      tpu_config=tpu_config)  # pylint: disable=line-too-long
+    config = tpu_config.RunConfig(
+        cluster=tpu_cluster_resolver,
+        model_dir=FLAGS.model_dir,
+        save_checkpoints_steps=max(600, FLAGS.iterations_per_loop),
+        tpu_config=tpu_config.TPUConfig(
+            iterations_per_loop=FLAGS.iterations_per_loop,
+            num_shards=FLAGS.num_cores,
+            per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
-    resnet_classifier = tf.contrib.tpu.TPUEstimator(use_tpu=FLAGS.use_tpu,
-                                                    model_fn=resnet_model_fn,
-                                                    config=config,
-                                                    train_batch_size=FLAGS.train_batch_size,
-                                                    eval_batch_size=FLAGS.eval_batch_size,
-                                                    export_to_tpu=False)
-
+    resnet_classifier = tpu_estimator.TPUEstimator(
+        use_tpu=FLAGS.use_tpu,
+        model_fn=resnet_model_fn,
+        config=config,
+        train_batch_size=FLAGS.train_batch_size,
+        eval_batch_size=FLAGS.eval_batch_size)
 
     assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
       'Invalid value for --precision flag; must be bfloat16 or float32.')
