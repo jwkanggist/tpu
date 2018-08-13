@@ -442,7 +442,7 @@ def main(unused_argv):
         train_batch_size=FLAGS.train_batch_size,
         eval_batch_size=FLAGS.eval_batch_size)
 
-    
+
     assert FLAGS.precision == 'bfloat16' or FLAGS.precision == 'float32', (
         'Invalid value for --precision flag; must be bfloat16 or float32.')
     tf.logging.info('Precision: %s', FLAGS.precision)

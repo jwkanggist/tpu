@@ -33,6 +33,9 @@ import mobilenet_model as mobilenet_v1
 import vgg_preprocessing
 
 from tensorflow.contrib.framework.python.ops import arg_scope
+from tensorflow.contrib.tpu.python.tpu import tpu_config
+from tensorflow.contrib.tpu.python.tpu import tpu_estimator
+from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.training.python.training import evaluation
 
 
@@ -506,7 +509,7 @@ def model_fn(features, labels, mode, params):
       tf.logging.fatal('Unknown optimizer:', FLAGS.optimizer)
 
     if FLAGS.use_tpu:
-      optimizer = tf.contrib.tpu.CrossShardOptimizer(optimizer)
+      optimizer = tpu_optimizer.CrossShardOptimizer(optimizer)
 
     update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
     with tf.control_dependencies(update_ops):
@@ -555,61 +558,60 @@ class LoadEMAHook(tf.train.SessionRunHook):
     self._load_ema(sess)
 
 
+
+
 def main(unused_argv):
-    del unused_argv  # Unused
+  del unused_argv  # Unused
 
-    ## ckpt dir create
-    now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
+  ## ckpt dir create
+  now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+  curr_model_dir = "{}/run-{}/".format(FLAGS.model_dir, now)
+  tf.logging.info('[main] data dir = %s' % FLAGS.data_dir)
+  tf.logging.info('[main] model dir = %s' % curr_model_dir)
 
-    tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
-    tf.logging.info('[main] model dir = %s'%curr_model_dir)
-
-    if not tf.gfile.Exists(curr_model_dir):
-        tf.gfile.MakeDirs(curr_model_dir)
-
-    FLAGS.model_dir = curr_model_dir
+  if not tf.gfile.Exists(curr_model_dir):
+      tf.gfile.MakeDirs(curr_model_dir)
+  FLAGS.model_dir = curr_model_dir
 
 
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
+  tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(
             FLAGS.tpu,
             zone=FLAGS.tpu_zone,
             project=FLAGS.gcp_project)
 
-    batch_size_per_shard = FLAGS.train_batch_size // FLAGS.num_shards
-    params = {
+  batch_size_per_shard = FLAGS.train_batch_size // FLAGS.num_shards
+  params = {
       'input_perm': [0, 1, 2, 3],
       'output_perm': [0, 1, 2, 3],
-    }
+  }
 
-    batch_axis = 0
-    if FLAGS.transpose_enabled:
-        if batch_size_per_shard >= 64:
-            params['input_perm'] = [3, 0, 1, 2]
-            params['output_perm'] = [1, 2, 3, 0]
-            batch_axis = 3
+  batch_axis = 0
+  if FLAGS.transpose_enabled:
+    if batch_size_per_shard >= 64:
+      params['input_perm'] = [3, 0, 1, 2]
+      params['output_perm'] = [1, 2, 3, 0]
+      batch_axis = 3
     else:
-        params['input_perm'] = [2, 0, 1, 3]
-        params['output_perm'] = [1, 2, 0, 3]
-        batch_axis = 2
+      params['input_perm'] = [2, 0, 1, 3]
+      params['output_perm'] = [1, 2, 0, 3]
+      batch_axis = 2
 
-    if FLAGS.eval_total_size > 0:
-        eval_size = FLAGS.eval_total_size
-    else:
-        eval_size = _NUM_EVAL_IMAGES
+  if FLAGS.eval_total_size > 0:
+    eval_size = FLAGS.eval_total_size
+  else:
+    eval_size = _NUM_EVAL_IMAGES
+  eval_steps = eval_size // FLAGS.eval_batch_size
 
-    eval_steps = eval_size // FLAGS.eval_batch_size
-
-    iterations = (eval_steps if FLAGS.mode == 'eval' else
+  iterations = (eval_steps if FLAGS.mode == 'eval' else
                 FLAGS.iterations)
 
-    eval_batch_size = (None if FLAGS.mode == 'train' else
+  eval_batch_size = (None if FLAGS.mode == 'train' else
                      FLAGS.eval_batch_size)
 
-    per_host_input_for_training = (FLAGS.num_shards <= 8 if
+  per_host_input_for_training = (FLAGS.num_shards <= 8 if
                                  FLAGS.mode == 'train' else True)
 
-    run_config = tf.contrib.tpu.RunConfig(
+  run_config = tpu_config.RunConfig(
       cluster=tpu_cluster_resolver,
       model_dir=FLAGS.model_dir,
       save_checkpoints_secs=FLAGS.save_checkpoints_secs,
@@ -617,12 +619,12 @@ def main(unused_argv):
       session_config=tf.ConfigProto(
           allow_soft_placement=True,
           log_device_placement=FLAGS.log_device_placement),
-      tpu_config=tf.contrib.tpu.TPUConfig(
+      tpu_config=tpu_config.TPUConfig(
           iterations_per_loop=iterations,
           num_shards=FLAGS.num_shards,
           per_host_input_for_training=per_host_input_for_training))
 
-    inception_classifier = tf.contrib.tpu.TPUEstimator(
+  inception_classifier = tpu_estimator.TPUEstimator(
       model_fn=model_fn,
       use_tpu=FLAGS.use_tpu,
       config=run_config,
@@ -631,61 +633,61 @@ def main(unused_argv):
       eval_batch_size=eval_batch_size,
       batch_axis=(batch_axis, 0))
 
-    # Input pipelines are slightly different (with regards to shuffling and
-    # preprocessing) between training and evaluation.
-    imagenet_train = InputPipeline(
+  # Input pipelines are slightly different (with regards to shuffling and
+  # preprocessing) between training and evaluation.
+  imagenet_train = InputPipeline(
       is_training=True,
       data_dir=FLAGS.data_dir)
-    imagenet_eval = InputPipeline(
+  imagenet_eval = InputPipeline(
       is_training=False,
       data_dir=FLAGS.data_dir)
 
-    if FLAGS.moving_average:
-        eval_hooks = [LoadEMAHook(FLAGS.model_dir)]
-    else:
-        eval_hooks = []
+  if FLAGS.moving_average:
+    eval_hooks = [LoadEMAHook(FLAGS.model_dir)]
+  else:
+    eval_hooks = []
 
-    if FLAGS.mode == 'eval':
-        def terminate_eval():
-            tf.logging.info('%d seconds without new checkpoints have elapsed '
-                          '... terminating eval' % FLAGS.eval_timeout)
-            return True
+  if FLAGS.mode == 'eval':
+    def terminate_eval():
+      tf.logging.info('%d seconds without new checkpoints have elapsed '
+                      '... terminating eval' % FLAGS.eval_timeout)
+      return True
 
-        def get_next_checkpoint():
-            return evaluation.checkpoints_iterator(
-              FLAGS.model_dir,
-              min_interval_secs=FLAGS.min_eval_interval,
-              timeout=FLAGS.eval_timeout,
-              timeout_fn=terminate_eval)
+    def get_next_checkpoint():
+      return evaluation.checkpoints_iterator(
+          FLAGS.model_dir,
+          min_interval_secs=FLAGS.min_eval_interval,
+          timeout=FLAGS.eval_timeout,
+          timeout_fn=terminate_eval)
 
-        for checkpoint in get_next_checkpoint():
-            tf.logging.info('Starting to evaluate.')
-            try:
-                eval_results = inception_classifier.evaluate(
-                    input_fn=imagenet_eval.input_fn,
-                    steps=eval_steps,
-                    hooks=eval_hooks,
-                    checkpoint_path=checkpoint)
-                tf.logging.info('Evaluation results: %s' % eval_results)
-            except tf.errors.NotFoundError:
-                # skip checkpoint if it gets deleted prior to evaluation
-                tf.logging.info('Checkpoint %s no longer exists ... skipping')
+    for checkpoint in get_next_checkpoint():
+      tf.logging.info('Starting to evaluate.')
+      try:
+        eval_results = inception_classifier.evaluate(
+            input_fn=imagenet_eval.input_fn,
+            steps=eval_steps,
+            hooks=eval_hooks,
+            checkpoint_path=checkpoint)
+        tf.logging.info('Evaluation results: %s' % eval_results)
+      except tf.errors.NotFoundError:
+        # skip checkpoint if it gets deleted prior to evaluation
+        tf.logging.info('Checkpoint %s no longer exists ... skipping')
 
-    elif FLAGS.mode == 'train_and_eval':
-        for cycle in range(FLAGS.train_steps // FLAGS.train_steps_per_eval):
-            tf.logging.info('Starting training cycle %d.' % cycle)
-            inception_classifier.train(
-              input_fn=imagenet_train.input_fn, steps=FLAGS.train_steps_per_eval)
+  elif FLAGS.mode == 'train_and_eval':
+    for cycle in range(FLAGS.train_steps // FLAGS.train_steps_per_eval):
+      tf.logging.info('Starting training cycle %d.' % cycle)
+      inception_classifier.train(
+          input_fn=imagenet_train.input_fn, steps=FLAGS.train_steps_per_eval)
 
-            tf.logging.info('Starting evaluation cycle %d .' % cycle)
-            eval_results = inception_classifier.evaluate(
-              input_fn=imagenet_eval.input_fn, steps=eval_steps, hooks=eval_hooks)
-            tf.logging.info('Evaluation results: %s' % eval_results)
+      tf.logging.info('Starting evaluation cycle %d .' % cycle)
+      eval_results = inception_classifier.evaluate(
+          input_fn=imagenet_eval.input_fn, steps=eval_steps, hooks=eval_hooks)
+      tf.logging.info('Evaluation results: %s' % eval_results)
 
-    else:
-        tf.logging.info('Starting training ...')
-        inception_classifier.train(
-            input_fn=imagenet_train.input_fn, steps=FLAGS.train_steps)
+  else:
+    tf.logging.info('Starting training ...')
+    inception_classifier.train(
+        input_fn=imagenet_train.input_fn, steps=FLAGS.train_steps)
 
 
 if __name__ == '__main__':
