@@ -29,8 +29,13 @@ import imagenet_input
 import resnet_model
 
 from tensorflow.contrib import summary
+from tensorflow.contrib.tpu.python.tpu import bfloat16
+from tensorflow.contrib.tpu.python.tpu import tpu_config
+from tensorflow.contrib.tpu.python.tpu import tpu_estimator
+from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
+
 
 FLAGS = flags.FLAGS
 
@@ -414,14 +419,14 @@ def main(unused_argv):
                                           per_host_input_for_training=tf.contrib.tpu.InputPipelineConfig.PER_HOST_V2)
 
     ## ckpt dir create
-    # now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    # curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
-    # tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
-    # tf.logging.info('[main] model dir = %s'%curr_model_dir)
-    #
-    # if not tf.gfile.Exists(curr_model_dir):
-    #     tf.gfile.MakeDirs(curr_model_dir)
-    # FLAGS.model_dir = curr_model_dir
+    now = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    curr_model_dir      = "{}/run-{}/".format(FLAGS.model_dir, now)
+    tf.logging.info('[main] data dir = %s'%FLAGS.data_dir)
+    tf.logging.info('[main] model dir = %s'%curr_model_dir)
+
+    if not tf.gfile.Exists(curr_model_dir):
+        tf.gfile.MakeDirs(curr_model_dir)
+    FLAGS.model_dir = curr_model_dir
 
 
     config = tf.contrib.tpu.RunConfig(cluster=tpu_cluster_resolver,
